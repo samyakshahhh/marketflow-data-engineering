@@ -1,0 +1,19 @@
+# Runtime dependencies baked into the MarketFlow Airflow image (docker/Dockerfile).
+#
+# Exact versions are resolved by the official Apache Airflow constraints file for
+# the image's Airflow and Python version, which is what the Dockerfile passes to
+# pip. That keeps the build reproducible and guarantees the versions are the ones
+# Airflow itself was tested with - these ranges only say what the project needs.
+#
+# With Airflow 3.4.0 / Python 3.13 the constraints resolve to:
+#   apache-airflow-providers-snowflake 6.20.0, snowflake-connector-python 4.8.1,
+#   requests 2.34.2, PyYAML 6.0.3
+
+apache-airflow-providers-snowflake>=6.20.0,<7.0.0
+snowflake-connector-python>=4.8.0,<6.0.0
+requests>=2.32.0,<3.0.0
+PyYAML>=6.0,<7.0
+
+# Test runner, so the suite can run inside the container as well
+# (docker compose run --rm airflow-cli bash -c "cd /opt/airflow/project && pytest").
+pytest>=8.0,<9.0

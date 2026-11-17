@@ -1,0 +1,174 @@
+# MarketFlow - local Airflow 3 environment (LocalExecutor).
+#
+# Derived from the official Apache Airflow 3.4.0 docker-compose file, reduced
+# to the components this project needs: Postgres metadata DB, API server,
+# scheduler, DAG processor and triggerer. Celery/Redis/Flower are intentionally
+# not used - the pipeline is small and LocalExecutor is sufficient.
+#
+#   docker compose build
+#   docker compose up -d
+#   http://localhost:8080
+---
+x-airflow-common: &airflow-common
+  image: ${AIRFLOW_IMAGE_NAME:-marketflow/airflow:3.4.0}
+  build:
+    context: .
+    dockerfile: docker/Dockerfile
+  env_file:
+    - .env
+  environment: &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg://airflow:airflow@postgres/airflow
+    AIRFLOW__CORE__FERNET_KEY: ${FERNET_KEY:-}
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
+    AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+    AIRFLOW__CORE__EXECUTION_API_SERVER_URL: 'http://airflow-apiserver:8080/execution/'
+    AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW__API_AUTH__JWT_SECRET:-marketflow_local_jwt_secret}
+    AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'
+    # Project code lives outside the dags folder and is imported as `src.*`.
+    PYTHONPATH: /opt/airflow/project
+    MARKETFLOW_PROJECT_ROOT: /opt/airflow/project
+    # Snowflake connection is assembled from .env - nothing to configure in the UI.
+    # Note: a password containing a double quote or backslash must be escaped here.
+    AIRFLOW_CONN_SNOWFLAKE_DEFAULT: >-
+      {"conn_type": "snowflake",
+       "login": "${SNOWFLAKE_USER:-}",
+       "password": "${SNOWFLAKE_PASSWORD:-}",
+       "schema": "${SNOWFLAKE_SCHEMA:-BRONZE}",
+       "extra": {"account": "${SNOWFLAKE_ACCOUNT:-}",
+                 "warehouse": "${SNOWFLAKE_WAREHOUSE:-COMPUTE_WH}",
+                 "database": "${SNOWFLAKE_DATABASE:-FINANCIAL_MARKET_DB}",
+                 "role": "${SNOWFLAKE_ROLE:-}"}}
+  volumes:
+    - ./dags:/opt/airflow/dags
+    - ./logs:/opt/airflow/logs
+    - ./src:/opt/airflow/project/src
+    - ./sql:/opt/airflow/project/sql
+    - ./config:/opt/airflow/project/config
+    - ./scripts:/opt/airflow/project/scripts
+    - ./tests:/opt/airflow/project/tests
+    # Second view of the DAGs so the in-container test suite finds them at <project>/dags.
+    - ./dags:/opt/airflow/project/dags:ro
+    - ./pytest.ini:/opt/airflow/project/pytest.ini
+  user: "${AIRFLOW_UID:-50000}:0"
+  depends_on: &airflow-common-depends-on
+    postgres:
+      condition: service_healthy
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - postgres-db-volume:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 10s
+      retries: 5
+      start_period: 5s
+    restart: always
+
+  airflow-apiserver:
+    <<: *airflow-common
+    command: api-server
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/api/v2/monitor/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    healthcheck:
+      test: ["CMD-SHELL", 'airflow jobs check --job-type SchedulerJob --hostname "$${HOSTNAME}"']
+      interval: 30s
+      timeout: 30s
+      retries: 5
+      start_period: 30s
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-dag-processor:
+    <<: *airflow-common
+    command: dag-processor
+    healthcheck:
+      test: ["CMD-SHELL", 'airflow jobs check --job-type DagProcessorJob --hostname "$${HOSTNAME}"']
+      interval: 30s
+      timeout: 30s
+      retries: 5
+      start_period: 30s
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-triggerer:
+    <<: *airflow-common
+    command: triggerer
+    healthcheck:
+      test: ["CMD-SHELL", 'airflow jobs check --job-type TriggererJob --hostname "$${HOSTNAME}"']
+      interval: 30s
+      timeout: 30s
+      retries: 5
+      start_period: 30s
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  # Runs once: database migration, UI user creation, permissions on mounted dirs.
+  airflow-init:
+    <<: *airflow-common
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        mkdir -p /opt/airflow/logs /opt/airflow/dags /opt/airflow/project
+        chown -R "${AIRFLOW_UID:-50000}:0" /opt/airflow/logs /opt/airflow/dags
+        echo "Airflow version:"
+        /entrypoint airflow version
+    environment:
+      <<: *airflow-common-env
+      _AIRFLOW_DB_MIGRATE: 'true'
+      _AIRFLOW_WWW_USER_CREATE: 'true'
+      _AIRFLOW_WWW_USER_USERNAME: ${_AIRFLOW_WWW_USER_USERNAME:-airflow}
+      _AIRFLOW_WWW_USER_PASSWORD: ${_AIRFLOW_WWW_USER_PASSWORD:-airflow}
+    user: "0:0"
+    depends_on:
+      <<: *airflow-common-depends-on
+
+  # Helper for ad-hoc work, e.g.
+  #   docker compose run --rm airflow-cli airflow dags list
+  #   docker compose run --rm airflow-cli bash -c "cd /opt/airflow/project && pytest -q"
+  airflow-cli:
+    <<: *airflow-common
+    profiles:
+      - debug
+    environment:
+      <<: *airflow-common-env
+      CONNECTION_CHECK_MAX_COUNT: "0"
+    command:
+      - bash
+      - -c
+      - airflow
+
+volumes:
+  postgres-db-volume:

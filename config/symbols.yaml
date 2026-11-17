@@ -1,0 +1,26 @@
+# Symbols ingested by the MarketFlow pipeline.
+#
+# Add or remove symbols here - no DAG code change is required.
+# `enabled: false` keeps a symbol documented but excluded from the next run.
+symbols:
+  - symbol: AAPL
+    name: Apple Inc.
+    enabled: true
+  - symbol: MSFT
+    name: Microsoft Corporation
+    enabled: true
+  - symbol: GOOGL
+    name: Alphabet Inc.
+    enabled: true
+  - symbol: AMZN
+    name: Amazon.com Inc.
+    enabled: true
+  - symbol: NVDA
+    name: NVIDIA Corporation
+    enabled: true
+  - symbol: META
+    name: Meta Platforms Inc.
+    enabled: true
+  - symbol: TSLA
+    name: Tesla Inc.
+    enabled: true

@@ -1,0 +1,5 @@
+# Local tooling only (unit tests outside Docker).
+# The pipeline itself does NOT need a local virtualenv - see README.
+requests>=2.32.0,<3.0.0
+PyYAML>=6.0,<7.0
+pytest>=8.0,<9.0

@@ -1,0 +1,5 @@
+# Normalise line endings: the repo stores LF, Windows checkouts get CRLF where
+# it matters. Files that are read inside the Linux containers stay LF.
+* text=auto eol=lf
+*.png binary
+*.jpg binary

@@ -1,0 +1,41 @@
+# Environment / secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.p8
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+
+# Airflow runtime artefacts
+logs/
+!logs/.gitkeep
+airflow.cfg
+airflow.db
+webserver_config.py
+standalone_admin_password.txt
+plugins/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Temp
+*.log
+*.tmp
+
+# Local working notes, not part of the published project
+*.local.md

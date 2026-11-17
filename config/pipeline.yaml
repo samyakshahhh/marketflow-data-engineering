@@ -1,0 +1,38 @@
+# MarketFlow pipeline configuration.
+#
+# Business/runtime configuration only - never put credentials in this file.
+# Secrets come from environment variables (see .env.example).
+
+source_system: FMP
+
+api:
+  # Financial Modeling Prep "stable" API.
+  # The legacy host path (https://financialmodelingprep.com/api/v3) is also
+  # supported by the client: both response shapes are normalised.
+  base_url: https://financialmodelingprep.com/stable
+  historical_prices_endpoint: historical-price-eod/full
+  company_profile_endpoint: profile
+  timeout_seconds: 30
+  max_retries: 3
+  backoff_factor: 2.0
+  # Pause between symbol requests, keeps the free tier happy.
+  request_delay_seconds: 1.0
+
+load:
+  # First ever run for a symbol: how much history to pull.
+  initial_lookback_days: 730
+  # Incremental runs re-request a few days before the watermark so late
+  # corrections from the vendor are picked up. MERGE makes this safe.
+  incremental_overlap_days: 3
+  # Max calendar days requested in a single API call.
+  max_days_per_request: 1825
+  # Extra Silver history pulled into the Gold window calculation so the
+  # 30-day moving average is correct at the first recalculated row.
+  gold_lookback_days: 60
+
+snowflake:
+  database: FINANCIAL_MARKET_DB
+  bronze_schema: BRONZE
+  silver_schema: SILVER
+  gold_schema: GOLD
+  audit_schema: AUDIT

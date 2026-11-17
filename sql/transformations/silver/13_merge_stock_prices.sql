@@ -1,0 +1,56 @@
+-- Load valid, de-duplicated records into Silver.
+--
+-- Idempotency: MERGE on the business key (SYMBOL, TRADE_DATE). Re-running the
+-- same window updates the same rows instead of inserting new ones, and the
+-- MATCHED guard stops an older record from overwriting a newer one.
+MERGE INTO SILVER.STOCK_PRICES t
+USING (
+    SELECT
+        SYMBOL,
+        TRADE_DATE,
+        OPEN_PRICE,
+        HIGH_PRICE,
+        LOW_PRICE,
+        CLOSE_PRICE,
+        VOLUME,
+        CHANGE_AMOUNT,
+        CHANGE_PERCENT,
+        VWAP,
+        SOURCE_SYSTEM,
+        BATCH_ID,
+        RUN_ID,
+        INGESTED_AT
+    FROM SILVER.VW_STOCK_PRICES_STAGING
+    WHERE INGESTED_AT >  TO_TIMESTAMP_NTZ(%(from_ts)s)
+      AND INGESTED_AT <= TO_TIMESTAMP_NTZ(%(to_ts)s)
+      AND IS_VALID
+    QUALIFY ROW_NUMBER() OVER (
+        PARTITION BY SYMBOL, TRADE_DATE
+        ORDER BY INGESTED_AT DESC, RAW_ID DESC
+    ) = 1
+) s
+   ON t.SYMBOL = s.SYMBOL
+  AND t.TRADE_DATE = s.TRADE_DATE
+WHEN MATCHED AND s.INGESTED_AT >= COALESCE(t.INGESTED_AT, TO_TIMESTAMP_NTZ('1900-01-01')) THEN UPDATE SET
+    t.OPEN_PRICE     = s.OPEN_PRICE,
+    t.HIGH_PRICE     = s.HIGH_PRICE,
+    t.LOW_PRICE      = s.LOW_PRICE,
+    t.CLOSE_PRICE    = s.CLOSE_PRICE,
+    t.VOLUME         = s.VOLUME,
+    t.CHANGE_AMOUNT  = s.CHANGE_AMOUNT,
+    t.CHANGE_PERCENT = s.CHANGE_PERCENT,
+    t.VWAP           = s.VWAP,
+    t.SOURCE_SYSTEM  = s.SOURCE_SYSTEM,
+    t.BATCH_ID       = s.BATCH_ID,
+    t.RUN_ID         = s.RUN_ID,
+    t.INGESTED_AT    = s.INGESTED_AT,
+    t.LOADED_AT      = CURRENT_TIMESTAMP()
+WHEN NOT MATCHED THEN INSERT (
+    SYMBOL, TRADE_DATE, OPEN_PRICE, HIGH_PRICE, LOW_PRICE, CLOSE_PRICE, VOLUME,
+    CHANGE_AMOUNT, CHANGE_PERCENT, VWAP, SOURCE_SYSTEM, BATCH_ID, RUN_ID,
+    INGESTED_AT, LOADED_AT
+) VALUES (
+    s.SYMBOL, s.TRADE_DATE, s.OPEN_PRICE, s.HIGH_PRICE, s.LOW_PRICE, s.CLOSE_PRICE, s.VOLUME,
+    s.CHANGE_AMOUNT, s.CHANGE_PERCENT, s.VWAP, s.SOURCE_SYSTEM, s.BATCH_ID, s.RUN_ID,
+    s.INGESTED_AT, CURRENT_TIMESTAMP()
+);
